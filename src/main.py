@@ -8,6 +8,7 @@ from .data_loader import load_data
 from .model.registry import get_model, list_models
 from .cross_validation import loso, loyo
 from .model.common import log10_strict
+from .table_output import write_table
 
 
 def main():
@@ -50,6 +51,38 @@ def main():
                         help="Output path for the scatter plot (e.g., plot.png)")
     parser.add_argument("--label", type=str, default=None,
                         help="Custom label to display in the plot (defaults to model name)")
+
+    # Additional uncertainty-analysis options
+    parser.add_argument("--coef-bootstrap", action="store_true",
+                        help="Bootstrap confidence intervals for coefficients of the selected model")
+    parser.add_argument("--paired-comparison", action="store_true",
+                        help="Paired comparison of out-of-fold errors against the selected base model")
+    parser.add_argument("--cluster-loss", action="store_true",
+                        help="Cluster-level loss differences against the selected base model")
+
+    parser.add_argument("--compare-models", nargs="+", default=None,
+                        help="Model names to compare against the base model specified by --model")
+    parser.add_argument("--validation", choices=["loso", "loyo", "both"], default="both",
+                        help="Validation scheme for paired comparison or cluster loss")
+    parser.add_argument("--bootstrap-n", type=int, default=10000,
+                        help="Number of bootstrap replicates")
+    parser.add_argument("--bootstrap-seed", type=int, default=12345,
+                        help="Random seed for bootstrap resampling")
+    parser.add_argument("--ci-level", type=float, default=0.95,
+                        help="Confidence interval level")
+    parser.add_argument("--bootstrap-unit", choices=["auto", "row", "site", "year"],
+                        default="auto",
+                        help="Bootstrap resampling unit. Currently retained for interface clarity.")
+    parser.add_argument("--paired-test", choices=["signflip", "ttest", "none"],
+                        default="signflip",
+                        help="Cluster-level paired test")
+    parser.add_argument("--table-out", type=str, default=None,
+                        help="Output path for table results")
+    parser.add_argument("--draws-out", type=str, default=None,
+                        help="Output path for bootstrap draws")
+    parser.add_argument("--table-format", choices=["text", "csv", "markdown"],
+                        default="text",
+                        help="Table output format")
 
     args = parser.parse_args()
 
@@ -98,6 +131,94 @@ def main():
 
     # Formatting helper for decimal places
     fmt = f".{args.digit}f"
+
+    # ------------------------------------------------------------------
+    # Additional analyses from version 1.1.0
+    # ------------------------------------------------------------------
+    if args.coef_bootstrap:
+        from .bootstrap import coefficient_bootstrap
+
+        summary_df, draws_df = coefficient_bootstrap(
+            model=model,
+            df=df,
+            n_bootstrap=args.bootstrap_n,
+            seed=args.bootstrap_seed,
+            ci_level=args.ci_level,
+        )
+
+        write_table(
+            summary_df,
+            path=args.table_out,
+            table_format=args.table_format,
+            digit=args.digit,
+        )
+
+        if args.draws_out:
+            draws_df.to_csv(args.draws_out, index=False)
+
+        return
+
+    if args.paired_comparison:
+        if not args.compare_models:
+            raise ValueError("--paired-comparison requires --compare-models.")
+
+        from .model_comparison import paired_comparison_table
+
+        table = paired_comparison_table(
+            df=df,
+            base_model_name=args.model,
+            compare_model_names=args.compare_models,
+            validation=args.validation,
+            n_bootstrap=args.bootstrap_n,
+            seed=args.bootstrap_seed,
+            ci_level=args.ci_level,
+            paired_test=args.paired_test,
+            site_col=args.site_col,
+            year_col=args.year_col,
+            exclude_years=args.exclude_year,
+            fix_klim=args.fix_klim,
+            klim_fixed=args.klim_fixed,
+        )
+
+        write_table(
+            table,
+            path=args.table_out,
+            table_format=args.table_format,
+            digit=args.digit,
+        )
+
+        return
+
+    if args.cluster_loss:
+        if not args.compare_models:
+            raise ValueError("--cluster-loss requires --compare-models.")
+
+        from .model_comparison import cluster_loss_table
+
+        table = cluster_loss_table(
+            df=df,
+            base_model_name=args.model,
+            compare_model_names=args.compare_models,
+            validation=args.validation,
+            site_col=args.site_col,
+            year_col=args.year_col,
+            exclude_years=args.exclude_year,
+            fix_klim=args.fix_klim,
+            klim_fixed=args.klim_fixed,
+        )
+
+        write_table(
+            table,
+            path=args.table_out,
+            table_format=args.table_format,
+            digit=args.digit,
+        )
+
+        return
+
+    # ------------------------------------------------------------------
+    # From initial version (1.0.0)
+    # ------------------------------------------------------------------
 
     if args.cv == "loso":
         rmse = loso(model=model, df=df, site_col=args.site_col)
@@ -149,23 +270,32 @@ def main():
 
         # --- Scatter Plot Generation ---
         if args.out:
-            plt.figure(figsize=(4.5, 4.5))
+            plt.figure(figsize=(5.0, 5.0), dpi=300)
 
             # Determine axis range
             vals = np.concatenate([y, y_pred])
             vals = vals[np.isfinite(vals)]
             vmin, vmax = vals.min(), vals.max()
+
             pad = 0.05 * (vmax - vmin if vmax > vmin else 1.0)
-            a, b = vmin - pad, vmax + pad
+            a = vmin - pad
+            b = vmax + pad
 
             # Scatter points
-            plt.scatter(y, y_pred, s=30, edgecolors='k',
-                        linewidths=0.5, color='black', alpha=0.7)
+            plt.scatter(
+                y,
+                y_pred,
+                s=30,
+                edgecolors='k',
+                linewidths=0.5,
+                color='black',
+                alpha=0.8
+            )
 
             # 1:1 Reference line
-            plt.plot([a, b], [a, b], 'k--', lw=1.0, label='1:1')
+            plt.plot([a, b], [a, b], 'k--', lw=1.0)
 
-            # +/- SD lines (Parallel to 1:1)
+            # +/- SD lines
             if np.isfinite(sd):
                 plt.plot([a, b], [a + sd, b + sd], 'k:', lw=1.0)
                 plt.plot([a, b], [a - sd, b - sd], 'k:', lw=1.0)
@@ -173,22 +303,36 @@ def main():
             # Axis settings
             plt.xlim(a, b)
             plt.ylim(a, b)
+
             plt.gca().set_aspect('equal', adjustable='box')
-            plt.xlabel('Measured log(TF)')
-            plt.ylabel('Predicted log(TF)')
+
+            # Larger labels
+            plt.xlabel('Measured log(TF)', fontsize=14)
+            plt.ylabel('Predicted log(TF)', fontsize=14)
+
+            # Larger tick labels
+            plt.xticks(fontsize=12)
+            plt.yticks(fontsize=12)
 
             # Text annotations
-            # Use custom label if provided, otherwise capitalize model name
             plot_label = args.label if args.label else args.model.capitalize()
-            plt.text(0.05, 0.95, plot_label, transform=plt.gca().transAxes,
-                     ha='left', va='top')
-            plt.text(0.05, 0.88, f"±SD = {sd:.{args.digit}f}", transform=plt.gca().transAxes,
-                     ha='left', va='top')
+
+            plt.text(
+                0.05,
+                0.95,
+                f"{plot_label}\n"
+                f"n = {len(y)}\n"
+                f"±SD = {sd:.{args.digit}f}",
+                transform=plt.gca().transAxes,
+                ha='left',
+                va='top',
+                fontsize=11
+            )
 
             plt.tight_layout()
-            plt.savefig(args.out)
-            print(f"Figure saved to: {args.out}")
+            plt.savefig(args.out, dpi=300)
 
+            print(f"Figure saved to: {args.out}")
 
 if __name__ == "__main__":
     main()

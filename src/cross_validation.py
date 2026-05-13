@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from src.model.common import log10_strict
 
 
@@ -74,6 +75,162 @@ def _rmse_micro(y_true, y_pred):
     y_pred = np.asarray(y_pred, float)
     r = y_true - y_pred
     return float(np.sqrt(np.mean(r * r)))
+
+
+def _pred_frame(
+    row_ids,
+    validation,
+    fold,
+    cluster_values,
+    model_name,
+    y_obs,
+    y_pred,
+):
+    y_obs = np.asarray(y_obs, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    residual = y_pred - y_obs
+    se = residual * residual
+
+    return pd.DataFrame({
+        "row_id": row_ids,
+        "validation": validation.upper(),
+        "fold": fold,
+        "cluster": cluster_values,
+        "model": model_name,
+        "y_obs": y_obs,
+        "y_pred": y_pred,
+        "residual": residual,
+        "squared_error": se,
+    })
+
+
+def loso_predictions(model, df, model_name=None, site_col="Site"):
+    """
+    Return out-of-fold predictions from Leave-One-Site-Out CV.
+
+    The returned DataFrame contains one row per held-out observation.
+    """
+    if site_col not in df.columns:
+        raise KeyError(f"Site column '{site_col}' not found.")
+
+    model_name = model_name or type(model).__name__
+
+    sites = df[site_col].dropna().unique().tolist()
+    frames = []
+
+    for site in sites:
+        train_df = df[df[site_col] != site].copy()
+        test_df = df[df[site_col] == site].copy()
+
+        if len(test_df) == 0 or len(train_df) == 0:
+            raise RuntimeError(f"Empty fold encountered for site={site!r}")
+
+        y_train, K_train, X_train = _build_yKX(train_df, model)
+        fit_result = model.fit(y_train, K_train, X_train, train_df=train_df)
+
+        y_test, K_test, X_test = _build_yKX(test_df, model)
+        y_pred = model.predict(K_test, X_test, fit_result)
+
+        frames.append(_pred_frame(
+            row_ids=test_df.index.to_numpy(),
+            validation="LOSO",
+            fold=site,
+            cluster_values=test_df[site_col].to_numpy(),
+            model_name=model_name,
+            y_obs=y_test,
+            y_pred=y_pred,
+        ))
+
+    if not frames:
+        raise RuntimeError("LOSO produced no predictions.")
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def loyo_predictions(model, df, model_name=None, year_col="Year", exclude_years=None):
+    """
+    Return out-of-fold predictions from Leave-One-Year-Out CV.
+
+    The returned DataFrame contains one row per held-out observation.
+    """
+    if year_col not in df.columns:
+        raise KeyError(f"Year column '{year_col}' not found.")
+
+    model_name = model_name or type(model).__name__
+
+    years = df[year_col].dropna().unique().tolist()
+    years = sorted([int(y) for y in years])
+
+    if exclude_years is not None:
+        exclude_set = set(int(y) for y in exclude_years)
+        years = [y for y in years if y not in exclude_set]
+
+    frames = []
+
+    for year in years:
+        train_df = df[df[year_col] != year].copy()
+        test_df = df[df[year_col] == year].copy()
+
+        if len(test_df) == 0 or len(train_df) == 0:
+            raise RuntimeError(f"Empty fold encountered for year={year}")
+
+        y_train, K_train, X_train = _build_yKX(train_df, model)
+        fit_result = model.fit(y_train, K_train, X_train, train_df=train_df)
+
+        y_test, K_test, X_test = _build_yKX(test_df, model)
+        y_pred = model.predict(K_test, X_test, fit_result)
+
+        frames.append(_pred_frame(
+            row_ids=test_df.index.to_numpy(),
+            validation="LOYO",
+            fold=year,
+            cluster_values=test_df[year_col].astype(int).to_numpy(),
+            model_name=model_name,
+            y_obs=y_test,
+            y_pred=y_pred,
+        ))
+
+    if not frames:
+        raise RuntimeError("LOYO produced no predictions.")
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def cv_predictions(
+    model,
+    df,
+    cv,
+    model_name=None,
+    site_col="Site",
+    year_col="Year",
+    exclude_years=None,
+):
+    """
+    Generic out-of-fold prediction function.
+
+    Parameters
+    ----------
+    cv : {'loso', 'loyo'}
+        Cross-validation scheme.
+    """
+    if cv == "loso":
+        return loso_predictions(
+            model=model,
+            df=df,
+            model_name=model_name,
+            site_col=site_col,
+        )
+
+    if cv == "loyo":
+        return loyo_predictions(
+            model=model,
+            df=df,
+            model_name=model_name,
+            year_col=year_col,
+            exclude_years=exclude_years,
+        )
+
+    raise ValueError(f"Unknown cv: {cv}")
 
 
 def loso(model, df, site_col="Site"):
