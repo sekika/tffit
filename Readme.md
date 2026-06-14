@@ -1,6 +1,8 @@
 # tffit: Python implementation of radiocesium transfer factor models for wheat
 
-This repository provides a Python implementation of soil-to-wheat radiocesium (<sup>137</sup>Cs) transfer factor (TF) models analyzed in the accompanying journal article.
+This repository provides a Python implementation of soil-to-wheat radiocesium (<sup>137</sup>Cs) transfer factor (TF) models analyzed in the following published journal article:
+
+- Seki, K., Yamaguchi, N., Eguchi, T., Igura, M., 2026. Improvement of spatiotemporal generalization in radiocesium transfer models for wheat using symbolic regression. *Journal of Environmental Radioactivity* 298, 108077. https://doi.org/10.1016/j.jenvrad.2026.108077
 
 It is designed to ensure transparency and reproducibility by allowing readers and reviewers to execute model fitting, external cross-validation, supplementary uncertainty analyses, and plotting using the Supplementary dataset.
 
@@ -13,7 +15,7 @@ It is designed to ensure transparency and reproducibility by allowing readers an
 
 This repository contains **code only** and does **not** include the dataset used in the paper.
 
-The dataset is provided as **Supplementary Material Table S1** of the accompanying journal article.
+The dataset is provided as **Supplementary Material Table S1** of the [published journal article](https://doi.org/10.1016/j.jenvrad.2026.108077).
 
 ## Features
 
@@ -99,16 +101,19 @@ pip install numpy pandas matplotlib scikit-learn openpyxl
 
 ## Usage
 
-Download the Supplementary Excel file of the accompanying journal article and save it as:
+Download the Supplementary Excel file from the [journal article page](https://doi.org/10.1016/j.jenvrad.2026.108077). When downloaded from the journal website, the file may have the following name:
+
+```text
+1-s2.0-S0265931X2600192X-mmc1.xlsx
+```
+
+Rename it to:
 
 ```text
 supplementary.xlsx
 ```
 
-in the current directory, that is, the `tffit/` directory.
-
-> **Note for reviewers/readers:**  
-> If the article is under review or recently published, download the Supplementary Excel file from the journal submission or publication page.
+and place it in the current directory, that is, the `tffit/` directory.
 
 ## Quick start: Reproducing Tables 4, 5, S3, S4, and S5
 
@@ -596,9 +601,21 @@ python3 -m src.main \
 
 ## Citation
 
-If you use this code in your research, please cite the accompanying paper.
+If you use this code in your research, please cite the following paper:
 
-> Citation details will be updated upon publication.
+- Seki, K., Yamaguchi, N., Eguchi, T., Igura, M., 2026. Improvement of spatiotemporal generalization in radiocesium transfer models for wheat using symbolic regression. *Journal of Environmental Radioactivity* 298, 108077. https://doi.org/10.1016/j.jenvrad.2026.108077
+
+```bibtex
+@article{Seki2026Tffit,
+  author  = {Seki, K. and Yamaguchi, N. and Eguchi, T. and Igura, M.},
+  title   = {Improvement of spatiotemporal generalization in radiocesium transfer models for wheat using symbolic regression},
+  journal = {Journal of Environmental Radioactivity},
+  volume  = {298},
+  pages   = {108077},
+  year    = {2026},
+  doi     = {10.1016/j.jenvrad.2026.108077}
+}
+```
 
 ## License
 
